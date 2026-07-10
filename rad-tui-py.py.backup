@@ -1,11 +1,10 @@
 import curses
 import time
 import re
-import copy
-import json
+import copy  # NEW: Required for snapshotting the design state
 
 # ==========================================================
-# VB1-DOS Clone: Python curses IDE (Save & Load Projects)
+# VB1-DOS Clone: Python curses IDE (Isolated Runtime State)
 # ==========================================================
 
 PYTHON_KEYWORDS = {
@@ -46,20 +45,6 @@ class UIControl:
         self.caption = caption
         self.code = "" 
 
-    def to_dict(self):
-        return {
-            'x': self.x, 'y': self.y, 'w': self.w, 'h': self.h,
-            'tool_type': self.tool_type, 'name_id': self.name_id,
-            'caption': self.caption, 'code': self.code
-        }
-
-    @classmethod
-    def from_dict(cls, data):
-        c = cls(data['x'], data['y'], data['w'], data['h'], 
-                data['tool_type'], data['name_id'], data['caption'])
-        c.code = data.get('code', '')
-        return c
-
 class Window:
     def __init__(self, x, y, w, h, title="untitled"):
         self.x = x
@@ -68,19 +53,6 @@ class Window:
         self.h = h
         self.title = title
         self.controls = []
-
-    def to_dict(self):
-        return {
-            'x': self.x, 'y': self.y, 'w': self.w, 'h': self.h,
-            'title': self.title,
-            'controls': [c.to_dict() for c in self.controls]
-        }
-
-    @classmethod
-    def from_dict(cls, data):
-        w = cls(data['x'], data['y'], data['w'], data['h'], data['title'])
-        w.controls = [UIControl.from_dict(c) for c in data.get('controls', [])]
-        return w
 
     def add_control(self, cx, cy, ctype, ctitle):
         if len(self.controls) < 30:
@@ -333,95 +305,6 @@ def draw_msgbox(stdscr, msg, colors):
     
     write_at(stdscr, x + (w - 6) // 2, y + h - 2, "[ OK ]", C_BORDER)
 
-def show_sync_msgbox(stdscr, msg, colors):
-    """A blocking message box used for system alerts like File I/O"""
-    draw_msgbox(stdscr, msg, colors)
-    stdscr.refresh()
-    while True:
-        ch = stdscr.getch()
-        if ch == curses.KEY_MOUSE:
-            try:
-                _, _, _, _, bstate = curses.getmouse()
-                if bstate & curses.BUTTON1_PRESSED or bstate & curses.BUTTON1_CLICKED:
-                    break
-            except curses.error:
-                pass
-        elif ch in (10, 13, 27) and ch != -1:
-            break
-        time.sleep(0.01)
-
-def handle_file_menu(stdscr, colors):
-    """Synchronous Dropdown Menu for File actions"""
-    C_BORDER = colors['border']
-    C_BG = colors['bg']
-    menu_items = [" Save Project As... ", " Load Project...    ", " Exit IDE           "]
-    w = 22
-    h = len(menu_items) + 2
-    x = 1
-    y = 1
-    
-    write_at(stdscr, x, y, "┌" + "─" * (w - 2) + "┐", C_BORDER)
-    for i, item in enumerate(menu_items):
-        write_at(stdscr, x, y + i + 1, "│", C_BORDER)
-        write_at(stdscr, x + 1, y + i + 1, item, C_BG)
-        write_at(stdscr, x + w - 1, y + i + 1, "│", C_BORDER)
-    write_at(stdscr, x, y + h - 1, "└" + "─" * (w - 2) + "┘", C_BORDER)
-    stdscr.refresh()
-    
-    while True:
-        ch = stdscr.getch()
-        if ch == curses.KEY_MOUSE:
-            try:
-                _, mx, my, _, bstate = curses.getmouse()
-                if bstate & curses.BUTTON1_PRESSED or bstate & curses.BUTTON1_CLICKED:
-                    if x < mx < x + w and y < my < y + h:
-                        idx = my - y - 1
-                        if idx == 0: return 'save'
-                        if idx == 1: return 'load'
-                        if idx == 2: return 'exit'
-                    return None
-            except curses.error:
-                pass
-        elif ch == 27:
-            return None
-        time.sleep(0.01)
-
-def prompt_input(stdscr, prompt_title, colors):
-    """Synchronous text input modal for Filenames"""
-    C_BORDER = colors['border']
-    C_BG = colors['bg']
-    C_TB = colors['textbox']
-    
-    box_w = 40
-    box_h = 5
-    box_x = (curses.COLS - box_w) // 2
-    box_y = (curses.LINES - box_h) // 2
-    
-    buffer = ""
-    while True:
-        write_at(stdscr, box_x, box_y, "┌" + "─" * (box_w - 2) + "┐", C_BORDER)
-        for i in range(1, box_h - 1):
-            write_at(stdscr, box_x, box_y + i, "│", C_BORDER)
-            write_at(stdscr, box_x + 1, box_y + i, " " * (box_w - 2), C_BG)
-            write_at(stdscr, box_x + box_w - 1, box_y + i, "│", C_BORDER)
-        write_at(stdscr, box_x, box_y + box_h - 1, "└" + "─" * (box_w - 2) + "┘", C_BORDER)
-        
-        title = f" {prompt_title} "
-        write_at(stdscr, box_x + (box_w - len(title))//2, box_y, title, C_BORDER)
-        write_at(stdscr, box_x + 2, box_y + 2, (buffer + "_").ljust(box_w - 4)[:box_w-4], C_TB)
-        stdscr.refresh()
-        
-        ch = stdscr.getch()
-        if ch == 27:
-            return None
-        elif ch in (10, 13, curses.KEY_ENTER):
-            return buffer.strip()
-        elif ch in (8, 127, curses.KEY_BACKSPACE):
-            buffer = buffer[:-1]
-        elif 32 <= ch <= 126 and ch != -1:
-            if len(buffer) < box_w - 5:
-                buffer += chr(ch)
-        time.sleep(0.01)
 
 def main(stdscr):
     curses.curs_set(0)
@@ -489,6 +372,8 @@ def main(stdscr):
     run_mode = False
     run_globals = {}
     run_focused_ctrl = -1 
+    
+    # NEW: State Backup to prevent Runtime modifications from leaking into Design Mode
     design_backup = None
 
     def commit_edit():
@@ -594,6 +479,7 @@ def main(stdscr):
                                 run_globals['__msg__'] = None 
                                 stdscr.clear()
                             elif 18 <= mx <= 23 and my == 0:
+                                # STOP RUN MODE AND RESTORE DESIGN STATE
                                 run_mode = False
                                 run_focused_ctrl = -1
                                 if design_backup is not None:
@@ -639,39 +525,8 @@ def main(stdscr):
                             if not clicked_prop_row:
                                 commit_edit()
 
-                            # FILE MENU CLICK
-                            if 1 <= mx <= 5 and my == 0:
-                                choice = handle_file_menu(stdscr, C)
-                                if choice == 'save':
-                                    fname = prompt_input(stdscr, "Save Project As (*.json)", C)
-                                    if fname:
-                                        if not fname.endswith('.json'): fname += '.json'
-                                        try:
-                                            with open(fname, 'w', encoding='utf-8') as f:
-                                                json.dump(windows[0].to_dict(), f, indent=2)
-                                            show_sync_msgbox(stdscr, f"Project saved to {fname}", C)
-                                        except Exception as e:
-                                            show_sync_msgbox(stdscr, f"Save Error:\n{e}", C)
-                                elif choice == 'load':
-                                    fname = prompt_input(stdscr, "Load Project (*.json)", C)
-                                    if fname:
-                                        if not fname.endswith('.json'): fname += '.json'
-                                        try:
-                                            with open(fname, 'r', encoding='utf-8') as f:
-                                                data = json.load(f)
-                                            windows[0] = Window.from_dict(data)
-                                            selected_ctrl_idx = -1
-                                            show_sync_msgbox(stdscr, f"Project loaded from {fname}", C)
-                                        except Exception as e:
-                                            show_sync_msgbox(stdscr, f"Load Error:\n{e}", C)
-                                elif choice == 'exit':
-                                    return # Terminate IDE
-                                
-                                stdscr.clear()
-                                clicked_handled = True
-
-                            # RUN MENU CLICK
-                            elif 18 <= mx <= 23 and my == 0:
+                            if 18 <= mx <= 23 and my == 0:
+                                # START RUN MODE AND SNAPSHOT DESIGN STATE
                                 design_backup = copy.deepcopy(windows[0])
                                 run_mode = True
                                 run_focused_ctrl = -1
@@ -694,9 +549,13 @@ def main(stdscr):
                                                 _msgbox(f"Compile Error in {c.name_id}:\n{e}")
                                 clicked_handled = True
 
+                            elif my == 0:
+                                write_at(stdscr, 60, 0, "Menu Clicked!       ", C['handle'])
+                                clicked_handled = True
+                                
                             elif tools.x <= mx < tools.x + tools.w and tools.y <= my < tools.y + tools.h:
                                 if tools.process_click(mx, my):
-                                    pass
+                                    write_at(stdscr, 60, 0, f"Selected: {tools.items[max(0, tools.active_tool)].strip()}" + " " * 10, C['handle'])
                                 else:
                                     dragged_tool = True
                                     drag_offset_x = mx - tools.x
