@@ -1,10 +1,11 @@
 import curses
 import time
 import re
-import copy  # NEW: Required for snapshotting the design state
+import copy
+import json
 
 # ==========================================================
-# VB1-DOS Clone: Python curses IDE (Isolated Runtime State)
+# VB1-DOS Clone: Python curses IDE (Frames, Checks, Options)
 # ==========================================================
 
 PYTHON_KEYWORDS = {
@@ -44,6 +45,22 @@ class UIControl:
         self.name_id = name_id
         self.caption = caption
         self.code = "" 
+        self.value = False # NEW: State tracking for Checks & Options
+
+    def to_dict(self):
+        return {
+            'x': self.x, 'y': self.y, 'w': self.w, 'h': self.h,
+            'tool_type': self.tool_type, 'name_id': self.name_id,
+            'caption': self.caption, 'code': self.code, 'value': self.value
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        c = cls(data['x'], data['y'], data['w'], data['h'], 
+                data['tool_type'], data['name_id'], data['caption'])
+        c.code = data.get('code', '')
+        c.value = data.get('value', False)
+        return c
 
 class Window:
     def __init__(self, x, y, w, h, title="untitled"):
@@ -54,6 +71,19 @@ class Window:
         self.title = title
         self.controls = []
 
+    def to_dict(self):
+        return {
+            'x': self.x, 'y': self.y, 'w': self.w, 'h': self.h,
+            'title': self.title,
+            'controls': [c.to_dict() for c in self.controls]
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        w = cls(data['x'], data['y'], data['w'], data['h'], data['title'])
+        w.controls = [UIControl.from_dict(c) for c in data.get('controls', [])]
+        return w
+
     def add_control(self, cx, cy, ctype, ctitle):
         if len(self.controls) < 30:
             name_id = f"ctrl{len(self.controls) + 1}"
@@ -61,9 +91,27 @@ class Window:
                 ctrl = UIControl(cx, cy, 12, 3, ctype, name_id, "Button")
             elif ctype == 13: 
                 ctrl = UIControl(cx, cy, 15, 1, ctype, name_id, "")
+            elif ctype == 7: # Frame Default
+                ctrl = UIControl(cx, cy, 20, 8, ctype, name_id, "Frame1")
+            elif ctype == 1: # Check Box Default
+                ctrl = UIControl(cx, cy, 15, 1, ctype, name_id, "Check1")
+            elif ctype == 11: # Option Btn Default
+                ctrl = UIControl(cx, cy, 15, 1, ctype, name_id, "Option1")
             else:
                 ctrl = UIControl(cx, cy, 12, 1, ctype, name_id, ctitle.strip())
             self.controls.append(ctrl)
+
+    # NEW: Geometric Grouping helper for Option Buttons
+    def get_parent_frame(self, ctrl):
+        best_frame = None
+        for c in self.controls:
+            if c.tool_type == 7 and c != ctrl:
+                # Is the control entirely inside this frame's bounds?
+                if c.x <= ctrl.x and c.y <= ctrl.y and \
+                   c.x + c.w >= ctrl.x + ctrl.w and \
+                   c.y + c.h >= ctrl.y + ctrl.h:
+                    best_frame = c
+        return best_frame
 
     def draw(self, stdscr, colors, active_ctrl=-1):
         C_BORDER = colors['border']
@@ -116,6 +164,36 @@ class Window:
                         write_at(stdscr, draw_x, draw_y + r, text, C_TEXTBOX)
                     else:
                         write_at(stdscr, draw_x, draw_y + r, " " * c.w, C_TEXTBOX)
+                        
+            elif c.tool_type == 7: # Frame Render
+                write_at(stdscr, draw_x, draw_y, "┌" + "─" * (c.w - 2) + "┐", C_BORDER)
+                for r in range(1, c.h - 1):
+                    write_at(stdscr, draw_x, draw_y + r, "│", C_BORDER)
+                    write_at(stdscr, draw_x + 1, draw_y + r, " " * (c.w - 2), C_BG)
+                    write_at(stdscr, draw_x + c.w - 1, draw_y + r, "│", C_BORDER)
+                write_at(stdscr, draw_x, draw_y + c.h - 1, "└" + "─" * (c.w - 2) + "┘", C_BORDER)
+                cap_str = f" {c.caption} "
+                if len(cap_str) <= c.w - 2:
+                    write_at(stdscr, draw_x + 2, draw_y, cap_str, C_BORDER)
+                    
+            elif c.tool_type == 1: # Check Box Render
+                for r in range(c.h):
+                    if r == 0:
+                        mark = "X" if c.value else " "
+                        text = (f"[{mark}] {c.caption}" + " " * c.w)[:c.w]
+                        write_at(stdscr, draw_x, draw_y + r, text, C_TEXTBOX)
+                    else:
+                        write_at(stdscr, draw_x, draw_y + r, " " * c.w, C_TEXTBOX)
+                        
+            elif c.tool_type == 11: # Option Btn Render
+                for r in range(c.h):
+                    if r == 0:
+                        mark = "•" if c.value else " "
+                        text = (f"({mark}) {c.caption}" + " " * c.w)[:c.w]
+                        write_at(stdscr, draw_x, draw_y + r, text, C_TEXTBOX)
+                    else:
+                        write_at(stdscr, draw_x, draw_y + r, " " * c.w, C_TEXTBOX)
+                        
             else:  
                 for r in range(c.h):
                     if r == 0:
@@ -228,6 +306,8 @@ def draw_properties(stdscr, prop_win, windows, selected_win_idx, selected_ctrl_i
         draw_prop(8, "Y:   ", 4, c.y)
         draw_prop(9, "W:   ", 5, c.w)
         draw_prop(10,"H:   ", 6, c.h)
+        if c.tool_type in (1, 11): # Show Value prop for checks and options
+            draw_prop(11,"Val: ", 7, "True" if c.value else "False")
     else:
         write_at(stdscr, prop_win.x + 2, prop_win.y + 2, "No selection.", C_LABEL)
 
@@ -305,13 +385,99 @@ def draw_msgbox(stdscr, msg, colors):
     
     write_at(stdscr, x + (w - 6) // 2, y + h - 2, "[ OK ]", C_BORDER)
 
+def show_sync_msgbox(stdscr, msg, colors):
+    draw_msgbox(stdscr, msg, colors)
+    stdscr.refresh()
+    while True:
+        ch = stdscr.getch()
+        if ch == curses.KEY_MOUSE:
+            try:
+                _, _, _, _, bstate = curses.getmouse()
+                if bstate & curses.BUTTON1_PRESSED or bstate & curses.BUTTON1_CLICKED:
+                    break
+            except curses.error:
+                pass
+        elif ch in (10, 13, 27) and ch != -1:
+            break
+        time.sleep(0.01)
+
+def handle_file_menu(stdscr, colors):
+    C_BORDER = colors['border']
+    C_BG = colors['bg']
+    menu_items = [" Save Project As... ", " Load Project...    ", " Exit IDE           "]
+    w = 22
+    h = len(menu_items) + 2
+    x = 1
+    y = 1
+    
+    write_at(stdscr, x, y, "┌" + "─" * (w - 2) + "┐", C_BORDER)
+    for i, item in enumerate(menu_items):
+        write_at(stdscr, x, y + i + 1, "│", C_BORDER)
+        write_at(stdscr, x + 1, y + i + 1, item, C_BG)
+        write_at(stdscr, x + w - 1, y + i + 1, "│", C_BORDER)
+    write_at(stdscr, x, y + h - 1, "└" + "─" * (w - 2) + "┘", C_BORDER)
+    stdscr.refresh()
+    
+    while True:
+        ch = stdscr.getch()
+        if ch == curses.KEY_MOUSE:
+            try:
+                _, mx, my, _, bstate = curses.getmouse()
+                if bstate & curses.BUTTON1_PRESSED or bstate & curses.BUTTON1_CLICKED:
+                    if x < mx < x + w and y < my < y + h:
+                        idx = my - y - 1
+                        if idx == 0: return 'save'
+                        if idx == 1: return 'load'
+                        if idx == 2: return 'exit'
+                    return None
+            except curses.error:
+                pass
+        elif ch == 27:
+            return None
+        time.sleep(0.01)
+
+def prompt_input(stdscr, prompt_title, colors):
+    C_BORDER = colors['border']
+    C_BG = colors['bg']
+    C_TB = colors['textbox']
+    
+    box_w = 40
+    box_h = 5
+    box_x = (curses.COLS - box_w) // 2
+    box_y = (curses.LINES - box_h) // 2
+    
+    buffer = ""
+    while True:
+        write_at(stdscr, box_x, box_y, "┌" + "─" * (box_w - 2) + "┐", C_BORDER)
+        for i in range(1, box_h - 1):
+            write_at(stdscr, box_x, box_y + i, "│", C_BORDER)
+            write_at(stdscr, box_x + 1, box_y + i, " " * (box_w - 2), C_BG)
+            write_at(stdscr, box_x + box_w - 1, box_y + i, "│", C_BORDER)
+        write_at(stdscr, box_x, box_y + box_h - 1, "└" + "─" * (box_w - 2) + "┘", C_BORDER)
+        
+        title = f" {prompt_title} "
+        write_at(stdscr, box_x + (box_w - len(title))//2, box_y, title, C_BORDER)
+        write_at(stdscr, box_x + 2, box_y + 2, (buffer + "_").ljust(box_w - 4)[:box_w-4], C_TB)
+        stdscr.refresh()
+        
+        ch = stdscr.getch()
+        if ch == 27:
+            return None
+        elif ch in (10, 13, curses.KEY_ENTER):
+            return buffer.strip()
+        elif ch in (8, 127, curses.KEY_BACKSPACE):
+            buffer = buffer[:-1]
+        elif 32 <= ch <= 126 and ch != -1:
+            if len(buffer) < box_w - 5:
+                buffer += chr(ch)
+        time.sleep(0.01)
 
 def main(stdscr):
     curses.curs_set(0)
     stdscr.nodelay(True)
     curses.mousemask(curses.ALL_MOUSE_EVENTS | curses.REPORT_MOUSE_POSITION)
     curses.mouseinterval(0) 
-    print('\033[?1003h\033[?1015h\033[?1006h', end='', flush=True) 
+    print('\033[?1003h', end='', flush=True) 
 
     curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)    
     curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_WHITE)   
@@ -341,10 +507,10 @@ def main(stdscr):
         'num': curses.color_pair(11)
     }
 
-    tools = Toolbox(1, 2)
+    tools = Toolbox(0, 1)
     windows = [
-        Window(21, 4, 36, 17, "Form 1"),
-        Window(59, 2, 20, 15, "Properties")
+        Window(17, 1, 41, 18, "Form 1"),
+        Window(48, 8, 22, 14, "Properties")
     ]
 
     selected_win_idx = -1
@@ -372,8 +538,6 @@ def main(stdscr):
     run_mode = False
     run_globals = {}
     run_focused_ctrl = -1 
-    
-    # NEW: State Backup to prevent Runtime modifications from leaking into Design Mode
     design_backup = None
 
     def commit_edit():
@@ -387,10 +551,11 @@ def main(stdscr):
                 elif editing_prop == 4: c.y = int(edit_buffer)
                 elif editing_prop == 5: c.w = int(edit_buffer)
                 elif editing_prop == 6: c.h = int(edit_buffer)
+                elif editing_prop == 7: c.value = edit_buffer.lower() in ('true', '1', 't', 'y', 'yes', 'x')
             except ValueError:
                 pass 
             c.w = max(4, c.w)
-            c.h = max(3 if c.tool_type == 3 else 1, c.h)
+            c.h = max(3 if c.tool_type in (3, 7) else 1, c.h)
             c.x = max(1, min(c.x, windows[selected_win_idx].w - c.w - 1))
             c.y = max(1, min(c.y, windows[selected_win_idx].h - c.h - 1))
         editing_prop = 0
@@ -479,7 +644,6 @@ def main(stdscr):
                                 run_globals['__msg__'] = None 
                                 stdscr.clear()
                             elif 18 <= mx <= 23 and my == 0:
-                                # STOP RUN MODE AND RESTORE DESIGN STATE
                                 run_mode = False
                                 run_focused_ctrl = -1
                                 if design_backup is not None:
@@ -493,13 +657,28 @@ def main(stdscr):
                                     idx = win.hit_control(lx, ly)
                                     if idx >= 0:
                                         c = win.controls[idx]
+                                        run_focused_ctrl = idx if c.tool_type == 13 else -1
                                         
-                                        if c.tool_type == 13:
-                                            run_focused_ctrl = idx
-                                        else:
-                                            run_focused_ctrl = -1
-                                        
-                                        if c.tool_type == 3: 
+                                        # --- RUNTIME CONTROL INTERACTIVITY ---
+                                        trigger_click = False
+                                        if c.tool_type == 3: # Button
+                                            trigger_click = True
+                                            
+                                        elif c.tool_type == 1: # Check Box
+                                            c.value = not c.value
+                                            trigger_click = True
+                                            
+                                        elif c.tool_type == 11: # Option Btn
+                                            c.value = True
+                                            parent = win.get_parent_frame(c)
+                                            # Uncheck peers in the same geometric group
+                                            for other_c in win.controls:
+                                                if other_c.tool_type == 11 and other_c != c:
+                                                    if win.get_parent_frame(other_c) == parent:
+                                                        other_c.value = False
+                                            trigger_click = True
+                                            
+                                        if trigger_click:
                                             fn = f"on_click_{c.name_id}"
                                             if fn in run_globals:
                                                 try:
@@ -519,14 +698,43 @@ def main(stdscr):
                             prop_win = windows[1]
                             prop_local_y = my - prop_win.y
                             clicked_prop_row = False
-                            if prop_win.hit_test(mx, my) and selected_ctrl_idx >= 0 and 5 <= prop_local_y <= 10:
+                            if prop_win.hit_test(mx, my) and selected_ctrl_idx >= 0 and 5 <= prop_local_y <= 11:
                                 clicked_prop_row = True
                             
                             if not clicked_prop_row:
                                 commit_edit()
 
-                            if 18 <= mx <= 23 and my == 0:
-                                # START RUN MODE AND SNAPSHOT DESIGN STATE
+                            if 1 <= mx <= 5 and my == 0:
+                                choice = handle_file_menu(stdscr, C)
+                                if choice == 'save':
+                                    fname = prompt_input(stdscr, "Save Project As (*.json)", C)
+                                    if fname:
+                                        if not fname.endswith('.json'): fname += '.json'
+                                        try:
+                                            with open(fname, 'w', encoding='utf-8') as f:
+                                                json.dump(windows[0].to_dict(), f, indent=2)
+                                            show_sync_msgbox(stdscr, f"Project saved to {fname}", C)
+                                        except Exception as e:
+                                            show_sync_msgbox(stdscr, f"Save Error:\n{e}", C)
+                                elif choice == 'load':
+                                    fname = prompt_input(stdscr, "Load Project (*.json)", C)
+                                    if fname:
+                                        if not fname.endswith('.json'): fname += '.json'
+                                        try:
+                                            with open(fname, 'r', encoding='utf-8') as f:
+                                                data = json.load(f)
+                                            windows[0] = Window.from_dict(data)
+                                            selected_ctrl_idx = -1
+                                            show_sync_msgbox(stdscr, f"Project loaded from {fname}", C)
+                                        except Exception as e:
+                                            show_sync_msgbox(stdscr, f"Load Error:\n{e}", C)
+                                elif choice == 'exit':
+                                    return 
+                                
+                                stdscr.clear()
+                                clicked_handled = True
+
+                            elif 18 <= mx <= 23 and my == 0:
                                 design_backup = copy.deepcopy(windows[0])
                                 run_mode = True
                                 run_focused_ctrl = -1
@@ -549,13 +757,9 @@ def main(stdscr):
                                                 _msgbox(f"Compile Error in {c.name_id}:\n{e}")
                                 clicked_handled = True
 
-                            elif my == 0:
-                                write_at(stdscr, 60, 0, "Menu Clicked!       ", C['handle'])
-                                clicked_handled = True
-                                
                             elif tools.x <= mx < tools.x + tools.w and tools.y <= my < tools.y + tools.h:
                                 if tools.process_click(mx, my):
-                                    write_at(stdscr, 60, 0, f"Selected: {tools.items[max(0, tools.active_tool)].strip()}" + " " * 10, C['handle'])
+                                    pass
                                 else:
                                     dragged_tool = True
                                     drag_offset_x = mx - tools.x
@@ -578,6 +782,10 @@ def main(stdscr):
                                                 elif prop_local_y == 8: editing_prop, edit_buffer = 4, str(c.y)
                                                 elif prop_local_y == 9: editing_prop, edit_buffer = 5, str(c.w)
                                                 elif prop_local_y == 10: editing_prop, edit_buffer = 6, str(c.h)
+                                                elif prop_local_y == 11 and c.tool_type in (1, 11): 
+                                                    editing_prop, edit_buffer = 7, str(c.value)
+                                                else:
+                                                    clicked_prop_row = False
                                             else:
                                                 dragged_win = i
                                                 drag_offset_x = local_x
@@ -603,7 +811,8 @@ def main(stdscr):
                                                         drag_offset_y = local_y - c.y
                                                         matched_control = True
                                                         
-                                                        if is_double_click and c.tool_type == 3: 
+                                                        # Expanded Double-Click targets for Editor
+                                                        if is_double_click and c.tool_type in (1, 3, 7, 11, 13): 
                                                             code_mode = True
                                                             code_target_ctrl = c
                                                             if not c.code:
@@ -647,7 +856,7 @@ def main(stdscr):
                             new_w = (mx - windows[selected_win_idx].x) - c.x
                             new_h = (my - windows[selected_win_idx].y) - c.y
                             c.w = max(4, min(new_w, windows[selected_win_idx].w - c.x - 1))
-                            min_h = 3 if c.tool_type == 3 else 1
+                            min_h = 3 if c.tool_type in (3, 7) else 1
                             c.h = max(min_h, min(new_h, windows[selected_win_idx].h - c.y - 1))
                             
                         elif dragged_ctrl >= 0:
@@ -742,4 +951,4 @@ if __name__ == "__main__":
     try:
         curses.wrapper(main)
     finally:
-        print('\033[?1003l\033[?1015l\033[?1006l', end='', flush=True)
+        print('\033[?1003l', end='', flush=True)
