@@ -35,10 +35,14 @@ try to make the menu editor more visual, using existing components like a window
 that seems ok except for the buttons must have meaningful captions like Add menu , Delete menu and OK, you made all the button captions in the menu editor into "Button" , please fix that
 
 ms2.json if a bomb explodes set the backround color of that button to red
---done
+
 
 add on_form_load() event to the form of the IDE, also when you double click on the background of the form, it should being up the code window with the definition of on_form_load()
 chadge the menu editor so that the sub menus also appear in the top menu combo box. maybe with a small "..." as indentation to know it is a sub menu, and what level, I wnat htis so that sub menus can also h ave submenus. wil it work this way?
 change the lable Top level menus to "selected menu" 
+--done
+add 2 properties to text boxes, to enable horizontal and vertical scrollbars on the text box to be able to navigate large portions of text, for example in a text editor
+
+make a calculator.json example file with a calculator simillar to the windwos calc.exe but for my IDE
 
 
