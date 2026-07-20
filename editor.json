@@ -17,7 +17,7 @@
         {
           "label": "Load...",
           "name": "mnu_file_load",
-          "code": "def mnu_file_load_clicked():\n    import sys\n    #sys._shared_editor_text = txt_editor.caption\n    load_form('filedialogue.json')\n    global nextform\n    nextform=\"load\"",
+          "code": "def mnu_file_load_clicked():\n    import sys\n    sys._file_dialogue_mode = 'load'\n    load_form('filedialogue.json')\n",
           "sub": []
         },
         {
@@ -29,7 +29,7 @@
         {
           "label": "Save As...",
           "name": "mnu_file_save_as",
-          "code": "def mnu_file_save_as_clicked():\n    import sys\n    sys._shared_editor_text = txt_editor.caption\n    load_form('filedialogue.json')\n    global nextform\n    nextform=\"save\"",
+          "code": "def mnu_file_save_as_clicked():\n    import sys\n    sys._shared_editor_text = txt_editor.caption\n    sys._file_dialogue_mode = 'save'\n    load_form('filedialogue.json')\n",
           "sub": []
         },
         {

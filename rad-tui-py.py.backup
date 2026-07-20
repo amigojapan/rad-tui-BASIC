@@ -783,6 +783,11 @@ def main(stdscr):
     tools = Toolbox(0, 1)
     main_form = Window(17, 1, 41, 18, "Form 1", "Form1")
     prop_win = Window(48, 8, 22, 14, "Properties", "Properties")
+    
+    # FIX: By defining the Properties window as topmost from the start, 
+    # it won't disappear behind the main_form when clicked during the z-order sorting.
+    prop_win.pinned_topmost = True
+    
     windows = [main_form, prop_win]
     IDE_CLIPBOARD = ""
 
@@ -816,6 +821,9 @@ def main(stdscr):
         current_time_ms = time.time() * 1000
         
         for w in [target_form]:
+            # THIS IS THE FIX: Inject the form itself into the runtime globals!
+            run_globals_dict[w.name_id] = w
+            
             if w.code:
                 try: exec(w.code, run_globals_dict)
                 except Exception as e: _msgbox(f"Compile Error in {w.name_id}:\n{e}")
@@ -834,6 +842,34 @@ def main(stdscr):
         if "on_form_load" in run_globals_dict:
             try: run_globals_dict["on_form_load"]()
             except Exception as e: _msgbox(f"Runtime Error:\n{e}")
+
+    # def init_run_mode(target_form, run_globals_dict):
+    #     run_globals_dict.clear()
+    #     run_globals_dict['__msg__'] = None
+    #     def _msgbox(text): run_globals_dict['__msg__'] = str(text)
+    #     run_globals_dict['msgbox'] = _msgbox
+    #     run_globals_dict['load_form'] = trigger_load_form
+    #     current_time_ms = time.time() * 1000
+        
+    #     for w in [target_form]:
+    #         if w.code:
+    #             try: exec(w.code, run_globals_dict)
+    #             except Exception as e: _msgbox(f"Compile Error in {w.name_id}:\n{e}")
+    #         for c in w.controls:
+    #             run_globals_dict[c.name_id] = c
+    #             if c.tool_type == 14: c.last_tick = current_time_ms
+    #             if c.code:
+    #                 try: exec(c.code, run_globals_dict)
+    #                 except Exception as e: _msgbox(f"Compile Error in {c.name_id}:\n{e}")
+                    
+    #     for m, _, _ in flatten_menus(target_form.menus):
+    #         if m.code:
+    #             try: exec(m.code, run_globals_dict)
+    #             except Exception as e: _msgbox(f"Compile Error in {m.name_id}:\n{e}")
+                
+    #    if "on_form_load" in run_globals_dict:
+    #        try: run_globals_dict["on_form_load"]()
+    #        except Exception as e: _msgbox(f"Runtime Error:\n{e}")
 
     def commit_edit():
         nonlocal editing_prop, edit_buffer, selected_win, selected_ctrl_idx

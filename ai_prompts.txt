@@ -63,13 +63,24 @@ make shift+tab remove 4 spaces form the current line if nothing is selected, but
 
 also add to the IDE the ability to select text in the text areas by holding down the shift key and pressing any arrow key should allow to select text.
 
---done
 
 make a .json example, with a file dialog, if it is on windows show drives in a  combo box, ohterwise dont. make this dialogue pinned on top.
 
-in the text editor json,
-integrate the file dialogue for hte file picker, use the function to load anohter form we added earlier to load it form a json file. the save as shoudl bring up  the file dialogue that we made before and saves in a json file. also have an a quit option., when save or cancel is clickced hide the file picker.
+
+in the text editor json I am including here,
+integrate the file dialogue for hte file picker, use the function to load anohter form we added earlier to load it form a json file called filedialogue.json. the save as shoudl bring up  the file dialogue that we made before and saves in a json file. also add a quit option ot the menu., when save or cancel is clickced hide the file picker.
 make the menues actually do what they are supposed to, not just show msgboxes sayign what htey shoudl do, 
-
-
 make the textarea adapt to teh size of the form when teh on_form_resize() function is called.
+
+
+add a new menu under the latest editor.json(which I am including now), the menu should be Load , which loads a file opens a file in the text area.
+
+--done
+
+I will include hte most new editor.json and filedialogue.json
+the file load menu does not work... I want it to use filedialog.jason but when loaded it shoudl change  the caption  of the button from Save to Load, and it shoudl load the file and put it in the textarea, can  you make filedialogue usable bogth as Save as and Load dialogue depending on which menu called it please?
+
+make the properties and tools windows be pinned to the top, cause I cant see them when the form is made really big
+make the properties window expand down to fit all the properites available for hte current selected widget.
+use editor.json as the editor for code in the IDE instead of the usual code editign window, when click save, instead of saving just go back to the design mode.
+make the scrollwheel also scroll listsboxes up and down
