@@ -783,6 +783,11 @@ def main(stdscr):
     tools = Toolbox(0, 1)
     main_form = Window(17, 1, 41, 18, "Form 1", "Form1")
     prop_win = Window(48, 8, 22, 14, "Properties", "Properties")
+    
+    # FIX: By defining the Properties window as topmost from the start, 
+    # it won't disappear behind the main_form when clicked during the z-order sorting.
+    prop_win.pinned_topmost = True
+    
     windows = [main_form, prop_win]
     IDE_CLIPBOARD = ""
 
