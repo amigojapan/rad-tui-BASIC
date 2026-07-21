@@ -1,4 +1,12 @@
 #!/bin/bash
+# Save the current working directory
+MY_DIR=$(pwd)
 
-# Run the command with your parameter appended at the end
-python3 ~/Documents/GitHub/rad-tui-BASIC/rad-tui-py.py -run ~/Documents/GitHub/rad-tui-BASIC/projects/examples/tsukino.json $1
+# Move to the script directory to run it
+cd ~/Documents/GitHub/rad-tui-BASIC/
+
+# Run the script with the correct relative path for the json and absolute path for your file
+python3 rad-tui-py.py -run projects/examples/tsukino.json "$MY_DIR/$1"
+
+# Return to the original directory
+cd "$MY_DIR"

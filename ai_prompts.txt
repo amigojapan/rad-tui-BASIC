@@ -117,10 +117,10 @@ and give me the full code ot the IDE also
 
 feature for editor.json now called tsukino.json, add in submenu when rigth clicking, comment likes and uncomment lines, which shoudl comment all lines selected and uncommet all lines selected by adding  or removing # fromt he beginning of every line selected, uploading tsukino.json, give me the full new code for tsukino.json
 
---done
-
-
 in rad-tui-ide.py, after loading a project or saving a project, in the dialogue box, a [ok] button by itself appears on hte screen, please take away that ok warning. also the [ok] button appears after clicking the save project menu, remove that too.
 implement ctrl+a to select all in text box , ctrl+c to copy in text box and ctrl+v to paste in text box
 please fix all this adn give me the full code to rad-tui-ide.py
 
+--done
+
+please make it so that if we invoke rad-tui-IDE.py -run tsukino.json with no parapeter, it should start a new file called untitled.py and if we start it with a file that does not exist, it created the file before opening it.
