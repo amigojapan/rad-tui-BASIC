@@ -89,12 +89,38 @@ make the scrollwheel also scroll listsboxes up and down
 
 use filedialog.json in the IDE the way you did in the editor to load projects and do save as for projects. have it default to the projects subdirectory of the project's directory. do the fixes to the IDE and give me the full listing of the IDE
 
---done
-
 
 add a "Save Project" option to the menu of the IDE, this should save the project with the same name as it was opened.
 add a function to the IDE called END() which will end the program if executed form run, but will return to design mode if it is not run wiht -run.
 if it is run wiht -run make the menu option [stop] dissapear
+add to tesct boxes a method called .scroll_to_bottom() which will scroll the text box to the bottom. also add to text boxes a property called editable, which if unchecked the text box cant be edited.
+do all this and then give me the full code to the IDE please
+
+again I can no longer scroll on lists, please fix this
+also [STOP] whould only be hidden in runtime when the -run parameter is set, adn nto when a program is loaded in the IDE form design time
 
 
-feature for editor.json, add in submenu when rigth clicking, comment likes and uncomment lines, which shoudl comment all lines selected and uncommet all lines selected by adding  or removing # fromt he beginning of every line selected
+remove Dir list, Drive list, File List, Picture Box, form toolbox and resize toolbox properly 
+enable Hscrolbar, as a scrolls bar, enabel Vscrollbar as a scrollbar. then give me hte full listing of hte IDE code
+
+
+
+add an on_change_crtlName() event to text boxes, which shoudl trigger every time the text chages in a text box
+add a menu option to the IDE, under the edit option, to remove a control form the form, it shoudl remove the control that is selected
+do all this and then give me the full code to the IDE please
+
+remove View and Options menu items form IDE.
+
+add an event on_selection_start() and on_selection_end() to the text box . 
+include a mouse objext which should have an x and y properties so I can do x=mouse.x and y=mouse.y to get the current coordinates of the mouse
+and give me the full code ot the IDE also
+
+feature for editor.json now called tsukino.json, add in submenu when rigth clicking, comment likes and uncomment lines, which shoudl comment all lines selected and uncommet all lines selected by adding  or removing # fromt he beginning of every line selected, uploading tsukino.json, give me the full new code for tsukino.json
+
+--done
+
+
+in rad-tui-ide.py, after loading a project or saving a project, in the dialogue box, a [ok] button by itself appears on hte screen, please take away that ok warning. also the [ok] button appears after clicking the save project menu, remove that too.
+implement ctrl+a to select all in text box , ctrl+c to copy in text box and ctrl+v to paste in text box
+please fix all this adn give me the full code to rad-tui-ide.py
+

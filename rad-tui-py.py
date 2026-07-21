@@ -8,7 +8,7 @@ import argparse
 import os
 
 # ==========================================================
-# VB1-DOS Clone: Python curses IDE (Scroll Fixes)
+# VB1-DOS Clone: Python curses IDE
 # ==========================================================
 
 PYTHON_KEYWORDS = {
@@ -84,6 +84,8 @@ class UIControl:
         self.v_scroll = False
         self.syntax_hl = False
         self.editable = True
+        self.min_val = 0
+        self.max_val = 100
         self.scroll_x = 0
         self.scroll_y = 0
         self.cursor_x = 0
@@ -110,7 +112,8 @@ class UIControl:
             'items': self.items, 'list_index': self.list_index, 
             'scroll_offset': self.scroll_offset, 'interval': self.interval,
             'bg_color': self.bg_color, 'h_scroll': self.h_scroll, 'v_scroll': self.v_scroll,
-            'syntax_hl': self.syntax_hl, 'editable': self.editable
+            'syntax_hl': self.syntax_hl, 'editable': self.editable,
+            'min_val': getattr(self, 'min_val', 0), 'max_val': getattr(self, 'max_val', 100)
         }
 
     @classmethod
@@ -127,6 +130,9 @@ class UIControl:
         c.v_scroll = data.get('v_scroll', False)
         c.syntax_hl = data.get('syntax_hl', False)
         c.editable = data.get('editable', True)
+        c.min_val = data.get('min_val', 0)
+        c.max_val = data.get('max_val', 100)
+        if c.tool_type in (8, 15) and isinstance(c.value, bool): c.value = 0
         return c
 
 class Window:
@@ -175,6 +181,12 @@ class Window:
                 ctrl = UIControl(cx, cy, 15, 4, ctype, name_id, "List1")
                 ctrl.items = ["Item 1", "Item 2", "Item 3", "Item 4", "Item 5"]
             elif ctype == 14: ctrl = UIControl(cx, cy, 10, 1, ctype, name_id, "Timer1")
+            elif ctype == 8: 
+                ctrl = UIControl(cx, cy, 15, 1, ctype, name_id, "")
+                ctrl.value, ctrl.min_val, ctrl.max_val = 0, 0, 100
+            elif ctype == 15:
+                ctrl = UIControl(cx, cy, 1, 10, ctype, name_id, "")
+                ctrl.value, ctrl.min_val, ctrl.max_val = 0, 0, 100
             else: ctrl = UIControl(cx, cy, 12, 1, ctype, name_id, ctitle.strip())
             self.controls.append(ctrl)
 
@@ -240,6 +252,32 @@ class Window:
                 
                 write_clipped(draw_x, draw_y + actual_h - 1, "└", TOP_C)
                 write_clipped(draw_x + 1, draw_y + actual_h - 1, "─" * (c.w - 2) + "┘", BOT_C)
+
+            elif c.tool_type == 15: # VScrollBar
+                vh = max(3, c.h)
+                write_clipped(draw_x, draw_y, "▲", C_BORDER)
+                write_clipped(draw_x, draw_y + vh - 1, "▼", C_BORDER)
+                track_h = max(1, vh - 2)
+                v_range = max(1, getattr(c, 'max_val', 100) - getattr(c, 'min_val', 0))
+                val = getattr(c, 'value', 0)
+                if isinstance(val, bool): val = 0
+                pos = int(((val - getattr(c, 'min_val', 0)) / v_range) * (track_h - 1))
+                for r in range(1, vh - 1):
+                    char = "█" if r - 1 == pos else "▒"
+                    write_clipped(draw_x, draw_y + r, char, C_TEXTBOX)
+
+            elif c.tool_type == 8: # HScrollBar
+                vw = max(3, c.w)
+                write_clipped(draw_x, draw_y, "◄", C_BORDER)
+                write_clipped(draw_x + vw - 1, draw_y, "►", C_BORDER)
+                track_w = max(1, vw - 2)
+                v_range = max(1, getattr(c, 'max_val', 100) - getattr(c, 'min_val', 0))
+                val = getattr(c, 'value', 0)
+                if isinstance(val, bool): val = 0
+                pos = int(((val - getattr(c, 'min_val', 0)) / v_range) * (track_w - 1))
+                for col in range(1, vw - 1):
+                    char = "█" if col - 1 == pos else "▒"
+                    write_clipped(draw_x + col, draw_y, char, C_TEXTBOX)
 
             elif c.tool_type == 13: 
                 vw = max(1, c.w - (1 if c.v_scroll else 0))
@@ -376,40 +414,54 @@ class Window:
 
 class Toolbox:
     def __init__(self, x, y):
-        self.x, self.y, self.w, self.h = x, y, 16, 20
-        self.active_tool = -1
-        self.items = [
-            "Move/Size", "Check Box", "Combo Box", "Command Btn", "Dir List", "Drive List", "File List", "Frame",
-            "HScrollBar", "Label", "List Box", "Option Btn", "Picture Box", "Text Box", "Timer", "VScrollBar"
+        self.x, self.y, self.w = x, y, 16
+        self.active_tool = 0
+        self.tools = [
+            (0, "Move/Size"), (1, "Check Box"), (2, "Combo Box"), (3, "Command Btn"),
+            (7, "Frame"), (8, "HScrollBar"), (9, "Label"), (10, "List Box"),
+            (11, "Option Btn"), (13, "Text Box"), (14, "Timer"), (15, "VScrollBar")
         ]
+        self.h = len(self.tools) + 4
+
+    def get_tool_name(self, tool_type):
+        for t, n in self.tools:
+            if t == tool_type: return n
+        return "Control"
 
     def draw(self, stdscr, colors):
         C_TB, C_ACTIVE = colors['textbox'], colors['active_tool']
         write_at(stdscr, self.x, self.y, "┌" + "─" * (self.w - 2) + "┐", C_TB)
         write_at(stdscr, self.x + (self.w // 2) - 3, self.y, "-Tools-", C_TB)
         curr_y = self.y + 1
+        
+        ttype, tname = self.tools[0]
         write_at(stdscr, self.x, curr_y, "│", C_TB)
-        text = (self.items[0] + " " * (self.w - 2))[:self.w - 2]
-        write_at(stdscr, self.x + 1, curr_y, text, C_ACTIVE if self.active_tool == 0 else C_TB)
+        text = (tname + " " * (self.w - 2))[:self.w - 2]
+        write_at(stdscr, self.x + 1, curr_y, text, C_ACTIVE if self.active_tool == ttype else C_TB)
         write_at(stdscr, self.x + self.w - 1, curr_y, "│", C_TB)
         curr_y += 1
+        
         write_at(stdscr, self.x, curr_y, "├" + "─" * (self.w - 2) + "┤", C_TB)
         curr_y += 1
-        for i in range(1, 16):
+        
+        for i in range(1, len(self.tools)):
+            ttype, tname = self.tools[i]
             write_at(stdscr, self.x, curr_y, "│", C_TB)
-            text = (self.items[i] + " " * (self.w - 2))[:self.w - 2]
-            write_at(stdscr, self.x + 1, curr_y, text, C_ACTIVE if self.active_tool == i else C_TB)
+            text = (tname + " " * (self.w - 2))[:self.w - 2]
+            write_at(stdscr, self.x + 1, curr_y, text, C_ACTIVE if self.active_tool == ttype else C_TB)
             write_at(stdscr, self.x + self.w - 1, curr_y, "│", C_TB)
             curr_y += 1
+            
         write_at(stdscr, self.x, curr_y, "└" + "─" * (self.w - 2) + "┘", C_TB)
 
     def process_click(self, mx, my):
         if self.x <= mx < self.x + self.w:
             if my == self.y + 1:
-                self.active_tool = 0
+                self.active_tool = self.tools[0][0]
                 return True
-            elif self.y + 3 <= my <= self.y + 17:
-                self.active_tool = my - (self.y + 2)
+            elif self.y + 3 <= my < self.y + 3 + len(self.tools) - 1:
+                idx = my - (self.y + 3) + 1
+                self.active_tool = self.tools[idx][0]
                 return True
         return False
 
@@ -433,7 +485,7 @@ def draw_properties(stdscr, prop_win, selected_win, selected_ctrl_idx, editing_p
 
     if selected_win is not None and selected_ctrl_idx >= 0:
         c = selected_win.controls[selected_ctrl_idx]
-        tool_name = "Timer" if c.tool_type == 14 else tools.items[c.tool_type].strip()
+        tool_name = "Timer" if c.tool_type == 14 else tools.get_tool_name(c.tool_type).strip()
         write_at(stdscr, prop_win.x + 2, prop_win.y + 2, f"Type: {tool_name}", C_LABEL)
         write_at(stdscr, prop_win.x + 1, prop_win.y + 3, "─" * (prop_win.w - 2), C_BG)
 
@@ -452,9 +504,13 @@ def draw_properties(stdscr, prop_win, selected_win, selected_ctrl_idx, editing_p
             draw_prop(11,"Items:", 8, ",".join(c.items))
             draw_prop(12,"Idx: ", 9, str(c.list_index))
         if c.tool_type == 14: draw_prop(11,"Intrv:", 7, str(c.interval))
+        if c.tool_type in (8, 15):
+            draw_prop(11,"Value:", 7, getattr(c, 'value', 0))
+            draw_prop(12,"Min:  ", 10, getattr(c, 'min_val', 0))
+            draw_prop(13,"Max:  ", 11, getattr(c, 'max_val', 100))
         if c.tool_type == 13:
-            draw_prop(11,"HScroll:", 7, "[X]" if c.h_scroll else "[ ]")
-            draw_prop(12,"VScroll:", 8, "[X]" if c.v_scroll else "[ ]")
+            draw_prop(11,"HScroll:", 7, "[X]" if getattr(c, 'h_scroll', False) else "[ ]")
+            draw_prop(12,"VScroll:", 8, "[X]" if getattr(c, 'v_scroll', False) else "[ ]")
             draw_prop(13,"SyntaxHL:", 10, "[X]" if getattr(c, 'syntax_hl', False) else "[ ]")
             draw_prop(14,"Editable:", 11, "[X]" if getattr(c, 'editable', True) else "[ ]")
         if c.tool_type == 3: 
@@ -571,6 +627,31 @@ def handle_file_menu(stdscr, colors):
                         if idx == 1: return 'save_as'
                         if idx == 2: return 'load'
                         if idx == 3: return 'exit'
+                    return None
+            except curses.error: pass
+        elif ch == 27: return None
+        time.sleep(0.01)
+
+def handle_edit_menu(stdscr, colors):
+    C_BORDER, C_BG = colors['border'], colors['bg']
+    menu_items = [" Delete Selected Control "]
+    w, h, x, y = 27, len(menu_items) + 2, 7, 1
+    write_at(stdscr, x, y, "┌" + "─" * (w - 2) + "┐", C_BORDER)
+    for i, item in enumerate(menu_items):
+        write_at(stdscr, x, y + i + 1, "│", C_BORDER)
+        write_at(stdscr, x + 1, y + i + 1, item, C_BG)
+        write_at(stdscr, x + w - 1, y + i + 1, "│", C_BORDER)
+    write_at(stdscr, x, y + h - 1, "└" + "─" * (w - 2) + "┘", C_BORDER)
+    stdscr.refresh()
+    while True:
+        ch = stdscr.getch()
+        if ch == curses.KEY_MOUSE:
+            try:
+                _, mx, my, _, bstate = curses.getmouse()
+                if bstate & curses.BUTTON1_PRESSED or bstate & curses.BUTTON1_CLICKED:
+                    if x < mx < x + w and y < my < y + h:
+                        idx = my - y - 1
+                        if idx == 0: return 'delete'
                     return None
             except curses.error: pass
         elif ch == 27: return None
@@ -724,6 +805,7 @@ def insert_text_at_cursor(c, text):
     c.caption = "\n".join(lines)
 
 def main(stdscr):
+    curses.raw()
     setattr(sys, '_ide_dir', os.getcwd())
     
     curses.curs_set(0)
@@ -776,6 +858,7 @@ def main(stdscr):
     code_target_ctrl = None
     
     run_focused_ctrl = run_pressed_ctrl = run_drag_scroll_v = run_drag_scroll_h = run_drag_select_text = -1 
+    run_drag_sys_vscroll = run_drag_sys_hscroll = -1
     design_backup = queued_form_to_load = None
 
     parser = argparse.ArgumentParser()
@@ -794,6 +877,12 @@ def main(stdscr):
     def init_run_mode(target_form, run_globals_dict):
         run_globals_dict.clear()
         run_globals_dict['__msg__'] = None
+        
+        class MouseState:
+            def __init__(self):
+                self.x = 0
+                self.y = 0
+        run_globals_dict['mouse'] = MouseState()
         
         def _msgbox(text): run_globals_dict['__msg__'] = str(text)
         def _ide_end():
@@ -897,11 +986,18 @@ def main(stdscr):
                     elif editing_prop == 4: c.y = int(edit_buffer)
                     elif editing_prop == 5: c.w = int(edit_buffer)
                     elif editing_prop == 6: c.h = int(edit_buffer)
-                    elif editing_prop == 7: c.interval = int(edit_buffer) if edit_buffer.isdigit() else 1000
+                    elif editing_prop == 7:
+                        if c.tool_type in (8, 15): c.value = int(edit_buffer) if edit_buffer.lstrip('-').isdigit() else 0
+                        else: c.interval = int(edit_buffer) if edit_buffer.isdigit() else 1000
                     elif editing_prop == 8: c.items = [s.strip() for s in edit_buffer.split(',')] if edit_buffer else []
                     elif editing_prop == 9: c.list_index = int(edit_buffer) if edit_buffer.lstrip('-').isdigit() else 0
+                    elif editing_prop == 10: c.min_val = int(edit_buffer) if edit_buffer.lstrip('-').isdigit() else 0
+                    elif editing_prop == 11: c.max_val = int(edit_buffer) if edit_buffer.lstrip('-').isdigit() else 100
                 except ValueError: pass 
-                c.w, c.h = max(4, c.w), max(3 if c.tool_type in (3, 7) else 1, c.h)
+                
+                if c.tool_type == 15: c.w = 1; c.h = max(3, c.h)
+                elif c.tool_type == 8: c.h = 1; c.w = max(3, c.w)
+                else: c.w, c.h = max(4, c.w), max(3 if c.tool_type in (3, 7) else 1, c.h)
                 c.x, c.y = max(1, min(c.x, selected_win.w - c.w - 1)), max(1, min(c.y, selected_win.h - c.h - 1))
             else:
                 w = selected_win
@@ -949,6 +1045,7 @@ def main(stdscr):
                     if w is old_form: windows[idx] = main_form; break
                 selected_win, selected_ctrl_idx = main_form, -1
                 run_focused_ctrl = run_pressed_ctrl = run_drag_scroll_v = run_drag_scroll_h = run_drag_select_text = -1
+                run_drag_sys_vscroll = run_drag_sys_hscroll = -1
                 stdscr.clear()
 
             # Handle user code editor exit
@@ -986,7 +1083,6 @@ def main(stdscr):
                         try:
                             with open(filepath, 'w', encoding='utf-8') as f: json.dump(main_form.to_dict(), f, indent=2)
                             CURRENT_PROJECT_FILE = filepath
-                            show_sync_msgbox(stdscr, f"Project saved to {filepath}", C)
                         except Exception as e: show_sync_msgbox(stdscr, f"Save Error:\n{e}", C)
                     elif mode == 'load':
                         if not filepath.endswith('.json'): filepath += '.json'
@@ -998,7 +1094,6 @@ def main(stdscr):
                             selected_win, selected_ctrl_idx = main_form, -1
                             design_backup = main_form
                             CURRENT_PROJECT_FILE = filepath
-                            show_sync_msgbox(stdscr, f"Project loaded from {filepath}", C)
                         except Exception as e: show_sync_msgbox(stdscr, f"Load Error:\n{e}", C)
             
             if queued_form_to_load:
@@ -1046,7 +1141,6 @@ def main(stdscr):
                 menu_positions.append((menu_x, menu_x + len(lbl), m))
                 menu_x += len(lbl)
                 
-            # Render [STOP] button UNLESS explicitly launched natively as a standalone app via -run
             if not getattr(sys, '_is_standalone_run', False):
                 stop_lbl = " [STOP] "
                 menu_x += 2
@@ -1055,7 +1149,7 @@ def main(stdscr):
             else:
                 stop_pos = (0, 0)
         else:
-            menu_str = " File  Edit  View [RUN ] Menu Editor  Options"
+            menu_str = " File  Edit  [RUN ] Menu Editor "
             write_at(stdscr, 0, 0, menu_str + " " * max(0, curses.COLS - len(menu_str)), C['handle'])
         
         for win in windows:
@@ -1070,6 +1164,7 @@ def main(stdscr):
                         t = swin.controls[sidx].tool_type
                         if t in (1, 11, 14, 3): return 13
                         if t in (2, 10): return 14
+                        if t in (8, 15): return 15
                         if t == 13: return 16
                         return 12
                     return 15
@@ -1104,6 +1199,11 @@ def main(stdscr):
         if ch == curses.KEY_MOUSE:
             try:
                 _, mx, my, _, bstate = curses.getmouse()
+                
+                if run_mode and 'mouse' in run_globals:
+                    run_globals['mouse'].x = mx
+                    run_globals['mouse'].y = my
+                
                 mouse_moved = (mx != old_mx or my != old_my)
                 left_click = bool(bstate & curses.BUTTON1_PRESSED) or bool(bstate & curses.BUTTON1_CLICKED)
                 right_click = bool(bstate & curses.BUTTON3_PRESSED) or bool(bstate & curses.BUTTON3_CLICKED)
@@ -1133,6 +1233,18 @@ def main(stdscr):
                                 c_h_safe = max(1, c.h)
                                 if scroll_up: c.scroll_offset = max(0, c.scroll_offset - 1)
                                 if scroll_down: c.scroll_offset = min(max(0, len(c.items) - c_h_safe), c.scroll_offset + 1)
+                            elif c.tool_type == 15:
+                                if scroll_up: c.value = max(getattr(c, 'min_val', 0), getattr(c, 'value', 0) - 1)
+                                if scroll_down: c.value = min(getattr(c, 'max_val', 100), getattr(c, 'value', 0) + 1)
+                                if f"on_change_{c.name_id}" in run_globals:
+                                    try: run_globals[f"on_change_{c.name_id}"]()
+                                    except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
+                            elif c.tool_type == 8:
+                                if scroll_up: c.value = max(getattr(c, 'min_val', 0), getattr(c, 'value', 0) - 1)
+                                if scroll_down: c.value = min(getattr(c, 'max_val', 100), getattr(c, 'value', 0) + 1)
+                                if f"on_change_{c.name_id}" in run_globals:
+                                    try: run_globals[f"on_change_{c.name_id}"]()
+                                    except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
 
                 elif left_click or right_click:
                     current_time = time.time()
@@ -1148,6 +1260,7 @@ def main(stdscr):
                             elif stop_pos[0] <= mx < stop_pos[1] and my == 0 and left_click and not getattr(sys, '_is_standalone_run', False):
                                 run_mode = False
                                 run_focused_ctrl = run_pressed_ctrl = run_drag_scroll_v = run_drag_scroll_h = run_drag_select_text = -1
+                                run_drag_sys_vscroll = run_drag_sys_hscroll = -1
                                 if design_backup is not None:
                                     old_form, main_form = main_form, copy.deepcopy(design_backup)
                                     for idx, w in enumerate(windows):
@@ -1203,8 +1316,12 @@ def main(stdscr):
                                                                 elif r == ey: sel_lines.append(lines[r][:ex])
                                                                 else: sel_lines.append(lines[r])
                                                             IDE_CLIPBOARD = "\n".join(sel_lines)
-                                                    elif action == 1 and getattr(c, 'editable', True): 
+                                                    elif action == 1 and getattr(c, 'editable', True):
+                                                        old_cap = c.caption
                                                         insert_text_at_cursor(c, IDE_CLIPBOARD)
+                                                        if c.caption != old_cap and f"on_change_{c.name_id}" in run_globals:
+                                                            try: run_globals[f"on_change_{c.name_id}"]()
+                                                            except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
                                                     elif action == 2: 
                                                         lines = c.caption.split('\n')
                                                         c.sel_start, c.sel_end = (0, 0), (max(0, len(lines)-1), len(lines[-1]))
@@ -1235,6 +1352,35 @@ def main(stdscr):
                                                         c.cursor_x = min(len(lines[c.cursor_y]), c.scroll_x + click_x)
                                                         c.sel_start, c.sel_end = (c.cursor_y, c.cursor_x), (c.cursor_y, c.cursor_x)
                                                         run_drag_select_text = idx
+                                                        
+                                                        fn_start = f"on_selection_start_{c.name_id}"
+                                                        if fn_start in run_globals:
+                                                            try: run_globals[fn_start]()
+                                                            except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
+                                                elif c.tool_type == 15:
+                                                    trigger_click = True
+                                                    if ly - c.y == 0:
+                                                        c.value = max(getattr(c, 'min_val', 0), getattr(c, 'value', 0) - 1)
+                                                    elif ly - c.y == c.h - 1:
+                                                        c.value = min(getattr(c, 'max_val', 100), getattr(c, 'value', 0) + 1)
+                                                    else:
+                                                        track_h = max(1, c.h - 2)
+                                                        v_range = getattr(c, 'max_val', 100) - getattr(c, 'min_val', 0)
+                                                        new_val = getattr(c, 'min_val', 0) + int(((ly - c.y - 1) / max(1, track_h - 1)) * v_range)
+                                                        c.value = max(getattr(c, 'min_val', 0), min(getattr(c, 'max_val', 100), new_val))
+                                                        run_drag_sys_vscroll = idx
+                                                elif c.tool_type == 8:
+                                                    trigger_click = True
+                                                    if lx - c.x == 0:
+                                                        c.value = max(getattr(c, 'min_val', 0), getattr(c, 'value', 0) - 1)
+                                                    elif lx - c.x == c.w - 1:
+                                                        c.value = min(getattr(c, 'max_val', 100), getattr(c, 'value', 0) + 1)
+                                                    else:
+                                                        track_w = max(1, c.w - 2)
+                                                        v_range = getattr(c, 'max_val', 100) - getattr(c, 'min_val', 0)
+                                                        new_val = getattr(c, 'min_val', 0) + int(((lx - c.x - 1) / max(1, track_w - 1)) * v_range)
+                                                        c.value = max(getattr(c, 'min_val', 0), min(getattr(c, 'max_val', 100), new_val))
+                                                        run_drag_sys_hscroll = idx
                                                 elif c.tool_type == 3: 
                                                     run_pressed_ctrl = idx 
                                                     fn_down = f"button_down_{c.name_id}"
@@ -1266,7 +1412,8 @@ def main(stdscr):
                                                             trigger_click = True
                                                     
                                                 if trigger_click:
-                                                    fn = f"on_click_{c.name_id}"
+                                                    if c.tool_type in (8, 15): fn = f"on_change_{c.name_id}"
+                                                    else: fn = f"on_click_{c.name_id}"
                                                     if fn in run_globals:
                                                         try: run_globals[fn]()
                                                         except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
@@ -1295,7 +1442,6 @@ def main(stdscr):
                                     if CURRENT_PROJECT_FILE:
                                         try:
                                             with open(CURRENT_PROJECT_FILE, 'w', encoding='utf-8') as f: json.dump(main_form.to_dict(), f, indent=2)
-                                            show_sync_msgbox(stdscr, f"Project saved to {CURRENT_PROJECT_FILE}", C)
                                         except Exception as e: show_sync_msgbox(stdscr, f"Save Error:\n{e}", C)
                                     else:
                                         choice = 'save_as' 
@@ -1314,14 +1460,24 @@ def main(stdscr):
                                 elif choice == 'exit': return 
                                 stdscr.clear()
                                 clicked_handled = True
+                                
+                            elif not clicked_handled and 7 <= mx <= 11 and my == 0:
+                                choice = handle_edit_menu(stdscr, C)
+                                if choice == 'delete':
+                                    if selected_win is not None and selected_ctrl_idx >= 0:
+                                        del selected_win.controls[selected_ctrl_idx]
+                                        selected_ctrl_idx = -1
+                                        editing_prop = 0
+                                stdscr.clear()
+                                clicked_handled = True
 
-                            elif not clicked_handled and 18 <= mx <= 23 and my == 0:
+                            elif not clicked_handled and 13 <= mx <= 18 and my == 0:
                                 design_backup, run_mode, run_focused_ctrl = copy.deepcopy(main_form), True, -1
                                 stdscr.clear()
                                 init_run_mode(main_form, run_globals)
                                 clicked_handled = True
 
-                            elif not clicked_handled and 25 <= mx <= 36 and my == 0:
+                            elif not clicked_handled and 20 <= mx <= 31 and my == 0:
                                 action, item = menu_editor_loop(stdscr, main_form, C)
                                 if action == 'edit_code' and item:
                                     ed_form, bak, tgt = launch_editor_json_for_code(item, main_form, windows, run_globals)
@@ -1364,6 +1520,7 @@ def main(stdscr):
                                                         elif c.tool_type == 14: editing_prop, edit_buffer = 7, str(c.interval)
                                                         elif c.tool_type == 13: c.h_scroll, clicked_prop_row = not c.h_scroll, False
                                                         elif c.tool_type in (2, 10): editing_prop, edit_buffer = 8, ",".join(c.items)
+                                                        elif c.tool_type in (8, 15): editing_prop, edit_buffer = 7, str(getattr(c, 'value', 0))
                                                         elif c.tool_type == 3:
                                                             block_idx, palette = (local_x - 9) // 2, [12, 13, 14, 15, 16, 17]
                                                             if 0 <= block_idx < len(palette): c.bg_color = palette[block_idx]
@@ -1372,9 +1529,11 @@ def main(stdscr):
                                                     elif prop_local_y == 12:
                                                         if c.tool_type == 13: c.v_scroll, clicked_prop_row = not c.v_scroll, False
                                                         elif c.tool_type in (2, 10): editing_prop, edit_buffer = 9, str(c.list_index)
+                                                        elif c.tool_type in (8, 15): editing_prop, edit_buffer = 10, str(getattr(c, 'min_val', 0))
                                                         else: clicked_prop_row = False
                                                     elif prop_local_y == 13:
                                                         if c.tool_type == 13: c.syntax_hl, clicked_prop_row = not c.syntax_hl, False
+                                                        elif c.tool_type in (8, 15): editing_prop, edit_buffer = 11, str(getattr(c, 'max_val', 100))
                                                         else: clicked_prop_row = False
                                                     elif prop_local_y == 14:
                                                         if c.tool_type == 13: c.editable, clicked_prop_row = not c.editable, False
@@ -1414,10 +1573,12 @@ def main(stdscr):
                                                                 if child != c and win.get_parent_frame(child) == c: dragged_frame_children.append(child_idx)
                                                         
                                                         # Hook editor.json for controls
-                                                        if is_double_click and c.tool_type in (1, 2, 3, 7, 10, 11, 13, 14): 
+                                                        if is_double_click and c.tool_type in (1, 2, 3, 7, 8, 10, 11, 13, 14, 15): 
                                                             if not c.code:
                                                                 if c.tool_type == 14: c.code = f"def on_tick_{c.name_id}():\n    pass\n"
+                                                                elif c.tool_type == 13: c.code = f"def on_change_{c.name_id}():\n    pass\n\ndef on_right_click_{c.name_id}():\n    pass\n\ndef on_selection_start_{c.name_id}():\n    pass\n\ndef on_selection_end_{c.name_id}():\n    pass\n"
                                                                 elif c.tool_type == 3: c.code = f"def button_down_{c.name_id}():\n    pass\n\ndef on_button_up_{c.name_id}():\n    pass\n\ndef on_click_{c.name_id}():\n    pass\n\ndef on_right_click_{c.name_id}():\n    pass\n"
+                                                                elif c.tool_type in (8, 15): c.code = f"def on_change_{c.name_id}():\n    pass\n\ndef on_right_click_{c.name_id}():\n    pass\n"
                                                                 else: c.code = f"def on_click_{c.name_id}():\n    pass\n\ndef on_right_click_{c.name_id}():\n    pass\n"
                                                                 
                                                             ed_form, bak, tgt = launch_editor_json_for_code(c, main_form, windows, run_globals)
@@ -1444,7 +1605,7 @@ def main(stdscr):
                                                         selected_win, selected_ctrl_idx = win, -1
                                             else:
                                                 if 0 < local_x < win.w - 14 and 0 < local_y < win.h - 1:
-                                                    win.add_control(local_x, local_y, tools.active_tool, tools.items[tools.active_tool])
+                                                    win.add_control(local_x, local_y, tools.active_tool, tools.get_tool_name(tools.active_tool))
                                                     selected_win, selected_ctrl_idx, tools.active_tool = win, len(win.controls) - 1, 0
                                         break
                 elif mouse_released:
@@ -1463,11 +1624,20 @@ def main(stdscr):
                                 if fn in run_globals:
                                     try: run_globals[fn]()
                                     except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
+                                    
+                    if run_mode and run_drag_select_text >= 0:
+                        c = main_form.controls[run_drag_select_text]
+                        if c.sel_start and c.sel_end and c.sel_start != c.sel_end:
+                            fn_end = f"on_selection_end_{c.name_id}"
+                            if fn_end in run_globals:
+                                try: run_globals[fn_end]()
+                                except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
 
                     if resizing_win is not None and resizing_win is main_form and run_mode: trigger_resize(main_form)
                     mouse_down = dragged_tool = resizing_ctrl = False
                     dragged_win = resizing_win = None
                     dragged_ctrl = run_pressed_ctrl = run_drag_scroll_v = run_drag_scroll_h = run_drag_select_text = -1
+                    run_drag_sys_vscroll = run_drag_sys_hscroll = -1
                     dragged_frame_children = []
 
                 if mouse_down and mouse_moved:
@@ -1488,6 +1658,30 @@ def main(stdscr):
                             if max_len > vw:
                                 cx = max(0, min(vw - 1, mx - (main_form.x + c.x)))
                                 c.scroll_x = max(0, min(max_len - vw, int((cx / max(1, vw - 1)) * (max_len - vw))))
+                        elif run_drag_sys_vscroll >= 0:
+                            c = main_form.controls[run_drag_sys_vscroll]
+                            track_h = max(1, c.h - 2)
+                            v_range = getattr(c, 'max_val', 100) - getattr(c, 'min_val', 0)
+                            click_y = my - (main_form.y + c.y)
+                            click_y = max(1, min(track_h, click_y))
+                            new_val = getattr(c, 'min_val', 0) + int(((click_y - 1) / max(1, track_h - 1)) * v_range)
+                            old_val = getattr(c, 'value', 0)
+                            c.value = max(getattr(c, 'min_val', 0), min(getattr(c, 'max_val', 100), new_val))
+                            if c.value != old_val and f"on_change_{c.name_id}" in run_globals:
+                                try: run_globals[f"on_change_{c.name_id}"]()
+                                except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
+                        elif run_drag_sys_hscroll >= 0:
+                            c = main_form.controls[run_drag_sys_hscroll]
+                            track_w = max(1, c.w - 2)
+                            v_range = getattr(c, 'max_val', 100) - getattr(c, 'min_val', 0)
+                            click_x = mx - (main_form.x + c.x)
+                            click_x = max(1, min(track_w, click_x))
+                            new_val = getattr(c, 'min_val', 0) + int(((click_x - 1) / max(1, track_w - 1)) * v_range)
+                            old_val = getattr(c, 'value', 0)
+                            c.value = max(getattr(c, 'min_val', 0), min(getattr(c, 'max_val', 100), new_val))
+                            if c.value != old_val and f"on_change_{c.name_id}" in run_globals:
+                                try: run_globals[f"on_change_{c.name_id}"]()
+                                except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
                         elif run_drag_select_text >= 0:
                             c = main_form.controls[run_drag_select_text]
                             click_x, click_y = mx - (main_form.x + c.x), my - (main_form.y + c.y)
@@ -1509,7 +1703,7 @@ def main(stdscr):
                         elif resizing_ctrl and dragged_ctrl >= 0 and selected_win is not None:
                             c = selected_win.controls[dragged_ctrl]
                             c.w = max(4, min((mx - selected_win.x) - c.x, selected_win.w - c.x - 1))
-                            c.h = max(3 if c.tool_type in (3, 7) else 1, min((my - selected_win.y) - c.y, selected_win.h - c.y - 1))
+                            c.h = max(3 if c.tool_type in (3, 7, 15) else 1, min((my - selected_win.y) - c.y, selected_win.h - c.y - 1))
                         elif dragged_ctrl >= 0 and selected_win is not None:
                             c = selected_win.controls[dragged_ctrl]
                             new_x, new_y = (mx - selected_win.x) - drag_offset_x, (my - selected_win.y) - drag_offset_y
@@ -1557,6 +1751,33 @@ def main(stdscr):
                             elif c.cursor_y < len(lines) - 1:
                                 c.cursor_y += 1
                                 c.cursor_x = 0
+                        elif ch == 1: # Ctrl+A
+                            c.sel_start = (0, 0)
+                            c.sel_end = (max(0, len(lines)-1), len(lines[-1]))
+                            c.cursor_y, c.cursor_x = c.sel_end
+                        elif ch == 3: # Ctrl+C
+                            if c.sel_start and c.sel_end:
+                                sy, sx = c.sel_start
+                                ey, ex = c.sel_end
+                                if (sy, sx) > (ey, ex): sy, sx, ey, ex = ey, ex, sy, sx
+                                if not lines: lines = [""]
+                                sy, ey = min(max(sy, 0), len(lines)-1), min(max(ey, 0), len(lines)-1)
+                                sx, ex = min(max(sx, 0), len(lines[sy])), min(max(ex, 0), len(lines[ey]))
+                                sel_lines = []
+                                for r in range(sy, ey + 1):
+                                    if r == sy and r == ey: sel_lines.append(lines[r][sx:ex])
+                                    elif r == sy: sel_lines.append(lines[r][sx:])
+                                    elif r == ey: sel_lines.append(lines[r][:ex])
+                                    else: sel_lines.append(lines[r])
+                                IDE_CLIPBOARD = "\n".join(sel_lines)
+                        elif ch == 22: # Ctrl+V
+                            if getattr(c, 'editable', True):
+                                old_cap = c.caption
+                                insert_text_at_cursor(c, IDE_CLIPBOARD)
+                                lines = c.caption.split('\n')
+                                if c.caption != old_cap and f"on_change_{c.name_id}" in run_globals:
+                                    try: run_globals[f"on_change_{c.name_id}"]()
+                                    except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
                         elif ch in (getattr(curses, 'KEY_SLEFT', 393), 393):
                             if c.sel_start is None: c.sel_start = (c.cursor_y, c.cursor_x)
                             if c.cursor_x > 0: c.cursor_x -= 1
@@ -1583,6 +1804,8 @@ def main(stdscr):
                             c.sel_end = (c.cursor_y, c.cursor_x)
                             
                         if getattr(c, 'editable', True):
+                            old_cap = c.caption
+                            
                             if ch == 9:
                                 if c.sel_start and c.sel_end and c.sel_start != c.sel_end:
                                     sy, sx = c.sel_start
@@ -1647,6 +1870,10 @@ def main(stdscr):
                                 lines[c.cursor_y] = lines[c.cursor_y][:c.cursor_x] + chr(ch) + lines[c.cursor_y][c.cursor_x:]
                                 c.cursor_x += 1
                                 c.caption = "\n".join(lines)
+                                
+                            if c.caption != old_cap and f"on_change_{c.name_id}" in run_globals:
+                                try: run_globals[f"on_change_{c.name_id}"]()
+                                except Exception as e: run_globals['__msg__'] = f"Runtime Error:\n{e}"
                             
                         if c.cursor_x > len(lines[c.cursor_y]): c.cursor_x = len(lines[c.cursor_y])
                         vw, vh = max(1, c.w - (1 if c.v_scroll else 0)), max(1, c.h - (1 if c.h_scroll else 0))

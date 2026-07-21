@@ -39,6 +39,25 @@
           "sub": []
         }
       ]
+    },
+    {
+      "label": "Selection",
+      "name": "mnu_selection",
+      "code": "def mnu_selection_clicked():\n    pass\n",
+      "sub": [
+        {
+          "label": "Comment Lines",
+          "name": "mnu_selection_comment",
+          "code": "def mnu_selection_comment_clicked():\n    if getattr(txt_editor, 'sel_start', None) is None or getattr(txt_editor, 'sel_end', None) is None:\n        msgbox('No selection found.')\n        return\n    s_row = txt_editor.sel_start[0]\n    e_row = txt_editor.sel_end[0]\n    if s_row > e_row:\n        s_row, e_row = e_row, s_row\n    lines = txt_editor.caption.splitlines(keepends=True)\n    new_lines = []\n    for i, line in enumerate(lines):\n        if s_row <= i <= e_row:\n            if line.strip() and not line.lstrip().startswith('#'):\n                indent = line[:len(line) - len(line.lstrip())]\n                new_lines.append(indent + '#' + line.lstrip())\n            else:\n                new_lines.append(line)\n        else:\n            new_lines.append(line)\n    txt_editor.caption = ''.join(new_lines)\n",
+          "sub": []
+        },
+        {
+          "label": "Uncomment Lines",
+          "name": "mnu_selection_uncomment",
+          "code": "def mnu_selection_uncomment_clicked():\n    if getattr(txt_editor, 'sel_start', None) is None or getattr(txt_editor, 'sel_end', None) is None:\n        msgbox('No selection found.')\n        return\n    s_row = txt_editor.sel_start[0]\n    e_row = txt_editor.sel_end[0]\n    if s_row > e_row:\n        s_row, e_row = e_row, s_row\n    lines = txt_editor.caption.splitlines(keepends=True)\n    new_lines = []\n    for i, line in enumerate(lines):\n        if s_row <= i <= e_row:\n            stripped = line.lstrip()\n            if stripped.startswith('#'):\n                indent = line[:len(line) - len(stripped)]\n                content = stripped[1:]\n                if content.startswith(' '):\n                    content = content[1:]\n                new_lines.append(indent + content)\n            else:\n                new_lines.append(line)\n        else:\n            new_lines.append(line)\n    txt_editor.caption = ''.join(new_lines)\n",
+          "sub": []
+        }
+      ]
     }
   ],
   "controls": [
@@ -50,7 +69,7 @@
       "tool_type": 13,
       "name_id": "txt_editor",
       "caption": "",
-      "code": "",
+      "code": "def on_change_txt_editor():\n    pass\n\ndef on_right_click_txt_editor():\n    pass\n\ndef on_selection_start_txt_editor():\n    pass\n\ndef on_selection_end_txt_editor():\n    pass\n",
       "value": false,
       "items": [],
       "list_index": 0,
@@ -59,8 +78,11 @@
       "bg_color": 12,
       "h_scroll": true,
       "v_scroll": true,
-      "syntax_hl": true
+      "syntax_hl": true,
+      "editable": true,
+      "min_val": 0,
+      "max_val": 100
     }
   ],
-  "code": "def on_form_load():\n    import sys\n    if hasattr(sys, '_shared_load_file'):\n        try:\n            with open(sys._shared_load_file, 'r') as f:\n                txt_editor.caption = f.read()\n            sys._shared_filename = sys._shared_load_file\n            del sys._shared_load_file\n        except Exception as e:\n            msgbox(f'Error loading file:\\n{e}')\n    elif hasattr(sys, '_shared_editor_text'):\n        txt_editor.caption = sys._shared_editor_text\n\ndef on_form_resize():\n    txt_editor.w = Form1.w - 2\n    txt_editor.h = Form1.h - 3\n"
+  "code": "def on_form_load():\n    import sys\n    if len(sys.argv) >= 4 and sys.argv[1] == '-run':\n        filepath = sys.argv[3]\n        try:\n            with open(filepath, 'r') as f:\n                txt_editor.caption = f.read()\n            sys._shared_filename = filepath\n        except Exception as e:\n            msgbox(f'Error opening {filepath}:\\n{e}')\n    elif hasattr(sys, '_shared_load_file'):\n        try:\n            with open(sys._shared_load_file, 'r') as f:\n                txt_editor.caption = f.read()\n            sys._shared_filename = sys._shared_load_file\n            del sys._shared_load_file\n        except Exception as e:\n            msgbox(f'Error loading file:\\n{e}')\n    elif hasattr(sys, '_shared_editor_text'):\n        txt_editor.caption = sys._shared_editor_text\n\ndef on_form_resize():\n    txt_editor.w = Form1.w - 2\n    txt_editor.h = Form1.h - 3\n"
 }
